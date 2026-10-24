@@ -28,12 +28,12 @@ jobs:
           python-version: "3.x"
       - name: Test conversion and first-run commit detection
         run: python -m unittest discover -s tests -v
-      - name: Convert Loyalsoldier gfw.txt
+      - name: Convert Loyalsoldier GFW domains and Telegram IP ranges
         run: python scripts/update_gfw.py
       - name: Commit changes
         shell: bash
         run: |
-          git add shadowrocket/gfw_domain_set.list shadowrocket/gfw_rule_set.list shadowrocket/shadowrocket.conf
+          git add shadowrocket/gfw_domain_set.list shadowrocket/gfw_rule_set.list shadowrocket/telegramcidr_rule_set.list shadowrocket/shadowrocket.conf
           if git diff --cached --quiet; then
             echo "No rule changes."
             exit 0
@@ -42,8 +42,6 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git commit -m "chore: update Shadowrocket GFW rules"
           git push
-      - name: Configure GitHub Pages
-        uses: actions/configure-pages@v5
       - name: Upload configuration and rule sets
         uses: actions/upload-pages-artifact@v4
         with:
@@ -56,6 +54,8 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v5
       - name: Deploy GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
