@@ -1,0 +1,61 @@
+name: Update Shadowrocket GFW rules
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+  schedule:
+    - cron: "10 23 * * *"
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: shadowrocket-rules-pages
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: main
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.x"
+      - name: Test conversion and first-run commit detection
+        run: python -m unittest discover -s tests -v
+      - name: Convert Loyalsoldier gfw.txt
+        run: python scripts/update_gfw.py
+      - name: Commit changes
+        shell: bash
+        run: |
+          git add shadowrocket/gfw_domain_set.list shadowrocket/gfw_rule_set.list shadowrocket/shadowrocket.conf
+          if git diff --cached --quiet; then
+            echo "No rule changes."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "chore: update Shadowrocket GFW rules"
+          git push
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v5
+      - name: Upload configuration and rule sets
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: shadowrocket
+
+  deploy:
+    needs: update
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
