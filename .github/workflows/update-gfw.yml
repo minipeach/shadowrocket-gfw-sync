@@ -28,12 +28,12 @@ jobs:
           python-version: "3.x"
       - name: Test conversion and first-run commit detection
         run: python -m unittest discover -s tests -v
-      - name: Convert Loyalsoldier GFW domains and Telegram IP ranges
+      - name: Sync GFW domains, Telegram IP ranges and ad blocking rules
         run: python scripts/update_gfw.py
       - name: Commit changes
         shell: bash
         run: |
-          git add shadowrocket/gfw_domain_set.list shadowrocket/gfw_rule_set.list shadowrocket/telegramcidr_rule_set.list shadowrocket/shadowrocket.conf
+          git add shadowrocket/gfw_domain_set.list shadowrocket/gfw_rule_set.list shadowrocket/telegramcidr_rule_set.list shadowrocket/adblock_rule_set.list shadowrocket/shadowrocket.conf
           if git diff --cached --quiet; then
             echo "No rule changes."
             exit 0

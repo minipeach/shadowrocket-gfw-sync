@@ -2,6 +2,20 @@
 
 将 [Loyalsoldier/clash-rules](https://github.com/Loyalsoldier/clash-rules) 的 GFW 域名列表和 Telegram IP 地址段转换为可通过 URL 直接导入 Shadowrocket 的完整配置，每天自动更新并发布到 GitHub Pages。
 
+## 广告规则集
+
+主配置通过一行规则引用独立广告列表，广告条目不会展开到主配置：
+
+```ini
+RULE-SET,https://minipeach.github.io/shadowrocket-gfw-sync/adblock_rule_set.list,REJECT
+```
+
+每天从 [Johnshall 的 sr_ad_only.conf](https://johnshall.github.io/Shadowrocket-ADBlock-Rules-Forever/sr_ad_only.conf) 提取 `[Rule]` 中的 REJECT 规则，移除策略字段、规范化 CIDR 并去重，生成 `shadowrocket/adblock_rule_set.list`；主源失败时使用其 GitHub release 分支。此转换不导入 URL Rewrite、MITM 或脚本。
+
+自定义规则放在模板中的广告 `RULE-SET` 之前，可以覆盖误拦截；广告规则集放在 Telegram、GFW、GEOIP 和 FINAL 规则之前。Shadowrocket 需要下载并加载远程规则集，更新时也应更新规则集缓存。任一上游下载或解析失败，本轮不会覆盖现有生成文件。
+
+广告规则原作者为 Moshel 和 Johnshall，来源项目 [Shadowrocket-ADBlock-Rules-Forever](https://github.com/Johnshall/Shadowrocket-ADBlock-Rules-Forever)，按 [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/) 许可提供；转换后的广告列表保留同一许可与署名，许可声明见 `ADBLOCK_UPSTREAM_LICENSE`。
+
 ## 特别声明
 
 * 编写本项目主要目的为学习和研究，无法保证项目内容的合法性、准确性、完整性和有效性。
