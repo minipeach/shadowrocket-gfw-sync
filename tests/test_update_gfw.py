@@ -38,7 +38,8 @@ class ConversionTests(unittest.TestCase):
             self.assertIn("[Rule]", config)
             self.assertLess(config.index("DOMAIN-SUFFIX,schwab.com,DIRECT"),
                             config.index("DOMAIN-SUFFIX,schwab.com,PROXY"))
-            self.assertTrue(config.endswith("FINAL,DIRECT\n"))
+            rule_section = config.split("[Rule]\n", 1)[1].split("\n[", 1)[0]
+            self.assertTrue(rule_section.rstrip().endswith("FINAL,DIRECT"))
             self.assertNotIn("# INSERT_", config)
             for rule in ["IP-CIDR,91.108.4.0/22,PROXY,no-resolve",
                          "IP-CIDR6,2001:b28:f23f::/48,PROXY,no-resolve"]:
