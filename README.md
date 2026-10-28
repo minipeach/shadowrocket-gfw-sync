@@ -1,6 +1,4 @@
-# Shadowrocket GFW Sync
 
-将 [Loyalsoldier/clash-rules](https://github.com/Loyalsoldier/clash-rules) 的 GFW 域名列表和 Telegram IP 地址段转换为可通过 URL 直接导入 Shadowrocket 的完整配置，每天自动更新并发布到 GitHub Pages。
 
 ## 特别声明
 
