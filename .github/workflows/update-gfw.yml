@@ -28,19 +28,19 @@ jobs:
           python-version: "3.x"
       - name: Test conversion and first-run commit detection
         run: python -m unittest discover -s tests -v
-      - name: Sync GFW domains, Telegram IP ranges and ad blocking rules
+      - name: Build personal configuration and update ad blocking rules
         run: python scripts/update_gfw.py
       - name: Commit changes
         shell: bash
         run: |
-          git add shadowrocket/gfw_domain_set.list shadowrocket/gfw_rule_set.list shadowrocket/telegramcidr_rule_set.list shadowrocket/adblock_rule_set.list shadowrocket/shadowrocket.conf
+          git add shadowrocket/adblock_rule_set.list shadowrocket/shadowrocket.conf
           if git diff --cached --quiet; then
             echo "No rule changes."
             exit 0
           fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git commit -m "chore: update Shadowrocket GFW rules"
+          git commit -m "chore: update Shadowrocket configuration and ad rules"
           git push
       - name: Upload configuration and rule sets
         uses: actions/upload-pages-artifact@v4

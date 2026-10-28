@@ -1,5 +1,4 @@
 import importlib.util
-from ipaddress import ip_network
 from pathlib import Path
 import subprocess
 import tempfile
@@ -13,101 +12,36 @@ spec.loader.exec_module(update)
 
 
 class ConversionTests(unittest.TestCase):
-    def test_normalization_deduplication_and_invalid_entries(self):
-        source = """payload:
-  - '+.Example.COM'
-  - '.example.com'
-  - "Another.org."
-  - 'invalid/path'
-  - 'invalid domain'
-"""
-        self.assertEqual(update.parse(source), ["example.com", "another.org"])
-
-    def test_empty_feed_is_rejected(self):
-        with self.assertRaises(RuntimeError):
-            update.parse("payload:\n")
-
-    def test_standalone_config_and_override_precedence(self):
+    def test_config_preserves_personal_settings_and_remote_rule_precedence(self):
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory)
-            networks = [ip_network("91.108.4.0/22"), ip_network("2001:b28:f23f::/48")]
             ads = ["DOMAIN-SUFFIX,ads.example.net", "IP-CIDR,203.0.113.0/24"]
-            update.write_rules(["schwab.com", "example.com"], networks, ads, output)
+            update.write_rules(ads, output)
             config = (output / "shadowrocket.conf").read_text()
-            self.assertIn("[General]", config)
-            self.assertIn("[Rule]", config)
-            self.assertLess(config.index("DOMAIN-SUFFIX,schwab.com,DIRECT"),
-                            config.index("DOMAIN-SUFFIX,schwab.com,PROXY"))
-            rule_section = config.split("[Rule]\n", 1)[1].split("\n[", 1)[0]
-            self.assertTrue(rule_section.rstrip().endswith("FINAL,DIRECT"))
-            self.assertNotIn("# INSERT_", config)
-            for rule in ["IP-CIDR,91.108.4.0/22,PROXY,no-resolve",
-                         "IP-CIDR6,2001:b28:f23f::/48,PROXY,no-resolve"]:
-                self.assertIn(rule, config)
-                self.assertLess(config.index(rule), config.index("GEOIP,CN,DIRECT"))
-            self.assertNotIn("YOUR_GITHUB_NAME", config)
-            self.assertNotIn("DOMAIN-SET,", config)
+            self.assertEqual(config, update.TEMPLATE.read_text())
+            base = "RULE-SET,https://fastly.jsdelivr.net/gh/Loyalsoldier/surge-rules@release/ruleset/"
+            telegram = base + "telegramcidr.txt,PROXY,no-resolve"
+            gfw = base + "gfw.txt,PROXY"
             ad_reference = "RULE-SET,https://minipeach.github.io/shadowrocket-gfw-sync/adblock_rule_set.list,REJECT"
-            self.assertEqual(config.count(ad_reference), 1)
-            self.assertLess(config.index("DOMAIN-SUFFIX,schwab.com,DIRECT"), config.index(ad_reference))
-            self.assertLess(config.index(ad_reference), config.index("# Telegram IP ranges:"))
-            self.assertLess(config.index(ad_reference), config.index("# GFW domains:"))
+            sequence = ["DOMAIN-SUFFIX,schwab.com,DIRECT", ad_reference, telegram, gfw,
+                        "GEOIP,CN,DIRECT", "FINAL,DIRECT", "[URL Rewrite]", "[MITM]"]
+            positions = [config.index(rule) for rule in sequence]
+            self.assertEqual(positions, sorted(positions))
+            for rule in [ad_reference, telegram, gfw]:
+                self.assertEqual(config.count(rule), 1)
+            self.assertNotIn("# INSERT_", config)
             self.assertNotIn("ads.example.net", config)
+            self.assertNotIn("DOMAIN-SUFFIX,000webhost.com,PROXY", config)
+            self.assertEqual({p.name for p in output.iterdir()},
+                             {"shadowrocket.conf", "adblock_rule_set.list"})
             ad_file = (output / "adblock_rule_set.list").read_text()
             self.assertIn("CC BY-SA 4.0", ad_file)
             self.assertEqual([line for line in ad_file.splitlines() if not line.startswith("#")], ads)
-            self.assertEqual((output / "gfw_domain_set.list").read_text(),
-                             ".schwab.com\n.example.com\n")
-            self.assertEqual((output / "gfw_rule_set.list").read_text(),
-                             "DOMAIN-SUFFIX,schwab.com\nDOMAIN-SUFFIX,example.com\n")
-            self.assertEqual((output / "telegramcidr_rule_set.list").read_text(),
-                             "IP-CIDR,91.108.4.0/22,no-resolve\n"
-                             "IP-CIDR6,2001:b28:f23f::/48,no-resolve\n")
-
-    def test_telegram_ipv4_ipv6_normalization_and_deduplication(self):
-        source = """payload:
-  - '91.108.4.0/22'
-  - '91.108.4.1/22'
-  - "2001:B28:F23F::/48"
-  - '2001:b28:f23f:0::/48'
-"""
-        self.assertEqual([str(n) for n in update.parse_telegram(source)],
-                         ["91.108.4.0/22", "2001:b28:f23f::/48"])
-
-    def test_invalid_or_empty_telegram_feeds_are_rejected(self):
-        for source in ["<html>Error</html>", "payload:\n", "payload:\n - 'example.com'",
-                       "payload:\n - '91.108.4.0/33'", "payload:\n - '2001:b28::/129'"]:
-            with self.subTest(source=source), self.assertRaises((ValueError, RuntimeError)):
-                update.parse_telegram(source)
-
-    def test_fetch_falls_back_on_download_or_validation_failure(self):
-        valid = MagicMock()
-        valid.__enter__.return_value.read.return_value = b"payload:\n - '91.108.4.0/22'\n"
-        invalid = MagicMock()
-        invalid.__enter__.return_value.read.return_value = b"payload:\n - 'invalid-cidr'\n"
-        for first in [OSError("unavailable"), invalid]:
-            with self.subTest(first=type(first).__name__), patch.object(
-                update, "urlopen", side_effect=[first, valid]
-            ) as mocked:
-                result = update.fetch(update.TELEGRAM_PRIMARY_URL, update.TELEGRAM_FALLBACK_URL,
-                                      update.parse_telegram)
-                self.assertEqual([str(n) for n in result], ["91.108.4.0/22"])
-                self.assertEqual(mocked.call_args_list[1].args[0].full_url,
-                                 update.TELEGRAM_FALLBACK_URL)
-
-    def test_failed_telegram_download_does_not_write_partial_outputs(self):
-        with patch("sys.argv", ["update_gfw.py"]), patch.object(
-            update, "fetch", side_effect=[["example.com"], RuntimeError("Telegram unavailable")]
-        ), patch.object(update, "write_rules") as write:
-            with self.assertRaises(RuntimeError):
-                update.main()
-            write.assert_not_called()
 
     def test_ad_rules_extract_only_rule_section_and_remove_policies(self):
         source = """[General]
 ipv6 = false
 [Rule]
-# An ad domain and duplicated IP ranges
 DOMAIN-SUFFIX,Ads.Example.net,Reject
 DOMAIN-SUFFIX,ads.example.net,REJECT
 IP-CIDR,203.0.113.5/24,Reject,no-resolve
@@ -132,10 +66,29 @@ hostname = *.example.net
             with self.subTest(source=source), self.assertRaises((ValueError, RuntimeError)):
                 update.parse_ad_rules(source)
 
+    def test_fetch_falls_back_on_download_or_validation_failure(self):
+        valid = MagicMock()
+        valid.__enter__.return_value.read.return_value = b"[Rule]\nDOMAIN-SUFFIX,ads.example.net,REJECT\n"
+        invalid = MagicMock()
+        invalid.__enter__.return_value.read.return_value = b"[Rule]\nFINAL,DIRECT\n"
+        for first in [OSError("unavailable"), invalid]:
+            with self.subTest(first=type(first).__name__), patch.object(
+                update, "urlopen", side_effect=[first, valid]
+            ) as mocked:
+                result = update.fetch(update.AD_PRIMARY_URL, update.AD_FALLBACK_URL, update.parse_ad_rules)
+                self.assertEqual(result, ["DOMAIN-SUFFIX,ads.example.net"])
+                self.assertEqual(mocked.call_args_list[1].args[0].full_url, update.AD_FALLBACK_URL)
+
+    def test_main_only_downloads_ads(self):
+        ads = ["DOMAIN-SUFFIX,ads.example.net"]
+        with patch("sys.argv", ["update_gfw.py"]), patch.object(update, "fetch", return_value=ads) as fetch, patch.object(update, "write_rules") as write:
+            update.main()
+            fetch.assert_called_once_with(update.AD_PRIMARY_URL, update.AD_FALLBACK_URL, update.parse_ad_rules)
+            write.assert_called_once_with(ads)
+
     def test_failed_ad_download_does_not_write_partial_outputs(self):
         with patch("sys.argv", ["update_gfw.py"]), patch.object(
-            update, "fetch", side_effect=[["example.com"], [ip_network("91.108.4.0/22")],
-                                         RuntimeError("Ad source unavailable")]
+            update, "fetch", side_effect=RuntimeError("Ad source unavailable")
         ), patch.object(update, "write_rules") as write:
             with self.assertRaises(RuntimeError):
                 update.main()
